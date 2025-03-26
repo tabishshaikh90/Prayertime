@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Settings - Prayer Time App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="admin-container">
+        <h1>Admin Settings</h1>
+        <div class="tab" id="tab-general" onclick="showTab('general')">General</div>
+        <div class="tab" id="tab-alarm" onclick="showTab('alarm')">Alarm Settings</div>
+        <div class="tab-content" id="general-settings">
+            <label for="location">Location:</label>
+            <input type="text" id="location" value="Mumbai">
+            <label for="calc-method">Calculation Method:</label>
+            <select id="calc-method">
+                <option value="2">University of Islamic Sciences, Karachi</option>
+                <option value="1">Muslim World League</option>
+                <option value="3">Islamic Society of North America</option>
+                <option value="4">Umm Al-Qura University, Makkah</option>
+            </select>
+            <label>Asr Method:</label>
+            <button id="asr-standard" class="active">Standard</button>
+            <button id="asr-hanafi">Hanafi</button>
+            <button onclick="saveSettings()">Save Settings</button>
+        </div>
+        <div class="tab-content" id="alarm-settings" style="display: none;">
+            <label for="alarm-time">Custom Alarm Time:</label>
+            <input type="time" id="alarm-time" value="01:00">
+            <label for="alarm-audio">Custom Alarm Audio:</label>
+            <select id="alarm-audio"></select>
+            <h3>Reminders</h3>
+            <div id="reminders-list"></div>
+            <button onclick="addReminder()">Add Reminder</button>
+            <button onclick="saveSettings()">Save Settings</button>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
