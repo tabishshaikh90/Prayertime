@@ -5,37 +5,173 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Settings - Prayer Time App</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="admin.css">
 </head>
-<body>
+<body class="admin-page">
     <div class="admin-container">
-        <h1>Admin Settings</h1>
-        <div class="tab" id="tab-general" onclick="showTab('general')">General</div>
-        <div class="tab" id="tab-alarm" onclick="showTab('alarm')">Alarm Settings</div>
-        <div class="tab-content" id="general-settings">
-            <label for="location">Location:</label>
-            <input type="text" id="location" value="Mumbai">
-            <label for="calc-method">Calculation Method:</label>
-            <select id="calc-method">
-                <option value="2">University of Islamic Sciences, Karachi</option>
-                <option value="1">Muslim World League</option>
-                <option value="3">Islamic Society of North America</option>
-                <option value="4">Umm Al-Qura University, Makkah</option>
-            </select>
-            <label>Asr Method:</label>
-            <button id="asr-standard" class="active">Standard</button>
-            <button id="asr-hanafi">Hanafi</button>
-            <button onclick="saveSettings()">Save Settings</button>
-        </div>
-        <div class="tab-content" id="alarm-settings" style="display: none;">
-            <label for="alarm-time">Custom Alarm Time:</label>
-            <input type="time" id="alarm-time" value="01:00">
-            <label for="alarm-audio">Custom Alarm Audio:</label>
-            <select id="alarm-audio"></select>
-            <h3>Reminders</h3>
-            <div id="reminders-list"></div>
-            <button onclick="addReminder()">Add Reminder</button>
-            <button onclick="saveSettings()">Save Settings</button>
-        </div>
+        <header class="admin-header">
+            <h1>Prayer Time Settings</h1>
+            <div class="admin-status">
+                <span class="status-indicator online"></span>
+                <span class="status-text">Online</span>
+            </div>
+        </header>
+
+        <nav class="admin-nav">
+            <button class="nav-tab active" data-tab="general">
+                <i class="icon-general"></i>
+                General
+            </button>
+            <button class="nav-tab" data-tab="alarm">
+                <i class="icon-alarm"></i>
+                Alarm
+            </button>
+            <button class="nav-tab" data-tab="theme">
+                <i class="icon-theme"></i>
+                Theme & Layout
+            </button>
+        </nav>
+
+        <main class="admin-content">
+            <!-- General Settings -->
+            <section class="settings-section active" id="general-settings">
+                <div class="settings-card">
+                    <h2>Location Settings</h2>
+                    <div class="form-group">
+                        <label for="city">City</label>
+                        <input type="text" id="city" value="Mumbai" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="state">State</label>
+                        <input type="text" id="state" value="" class="form-control" placeholder="Optional">
+                    </div>
+                    <div class="form-group">
+                        <label for="country">Country</label>
+                        <input type="text" id="country" value="India" class="form-control">
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <h2>Prayer Calculation Settings</h2>
+                    <div class="form-group">
+                        <label for="calc-method">Calculation Method</label>
+                        <select id="calc-method" class="form-control">
+                            <option value="0">Jafari / Shia Ithna-Ashari</option>
+                            <option value="1">University of Islamic Sciences, Karachi</option>
+                            <option value="2" selected>Islamic Society of North America</option>
+                            <option value="3">Muslim World League</option>
+                            <option value="4">Umm Al-Qura University, Makkah</option>
+                            <option value="5">Egyptian General Authority of Survey</option>
+                            <option value="7">Institute of Geophysics, University of Tehran</option>
+                            <option value="8">Gulf Region</option>
+                            <option value="9">Kuwait</option>
+                            <option value="10">Qatar</option>
+                            <option value="11">Majlis Ugama Islam Singapura, Singapore</option>
+                            <option value="12">Union Organization islamic de France</option>
+                            <option value="13">Diyanet İşleri Başkanlığı, Turkey</option>
+                            <option value="14">Spiritual Administration of Muslims of Russia</option>
+                            <option value="15">Moonsighting Committee Worldwide</option>
+                            <option value="16">Dubai (experimental)</option>
+                            <option value="17">Jabatan Kemajuan Islam Malaysia (JAKIM)</option>
+                            <option value="18">Tunisia</option>
+                            <option value="19">Algeria</option>
+                            <option value="20">KEMENAG - Kementerian Agama Republik Indonesia</option>
+                            <option value="21">Morocco</option>
+                            <option value="22">Comunidade Islamica de Lisboa</option>
+                            <option value="23">Ministry of Awqaf, Islamic Affairs and Holy Places, Jordan</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Asr Method (School)</label>
+                        <div class="button-group">
+                            <button id="asr-standard" class="btn btn-primary">Shafi</button>
+                            <button id="asr-hanafi" class="btn btn-primary active">Hanafi</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="adjustment">Adjustment (days)</label>
+                        <input type="number" id="adjustment" value="0" class="form-control" min="-30" max="30">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Alarm Settings (unchanged) -->
+            <section class="settings-section" id="alarm-settings">
+                <div class="settings-card">
+                    <h2>Custom Alarm</h2>
+                    <div class="form-group">
+                        <label for="alarm-time">Alarm Time</label>
+                        <input type="time" id="alarm-time" value="00:00" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="alarm-audio">Alarm Sound</label>
+                        <select id="alarm-audio" class="form-control"></select>
+                    </div>
+                </div>
+                <div class="settings-card">
+                    <h2>Reminders</h2>
+                    <div id="reminders-list" class="reminders-list"></div>
+                    <button onclick="addReminder()" class="btn btn-secondary">
+                        <i class="icon-plus"></i> Add Reminder
+                    </button>
+                </div>
+            </section>
+
+            <!-- Theme & Layout Settings (unchanged) -->
+            <section class="settings-section" id="theme-settings">
+                <div class="settings-card">
+                    <h2>Theme Selection</h2>
+                    <div class="theme-grid">
+                        <div class="theme-card" onclick="selectTheme('default')">
+                            <div class="theme-preview theme-default">
+                                <span class="theme-name">Default</span>
+                            </div>
+                        </div>
+                        <div class="theme-card" onclick="selectTheme('blue')">
+                            <div class="theme-preview theme-blue">
+                                <span class="theme-name">Blue</span>
+                            </div>
+                        </div>
+                        <div class="theme-card" onclick="selectTheme('dark')">
+                            <div class="theme-preview theme-dark">
+                                <span class="theme-name">Dark</span>
+                            </div>
+                        </div>
+                        <div class="theme-card" onclick="selectTheme('light')">
+                            <div class="theme-preview theme-light">
+                                <span class="theme-name">Light</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-card">
+                    <h2>Layout Selection</h2>
+                    <div class="layout-grid">
+                        <div class="layout-card" onclick="selectLayout('default')">
+                            <div class="layout-preview layout-default">
+                                <span class="layout-name">Default</span>
+                            </div>
+                        </div>
+                        <div class="layout-card" onclick="selectLayout('compact')">
+                            <div class="layout-preview layout-compact">
+                                <span class="layout-name">Compact</span>
+                            </div>
+                        </div>
+                        <div class="layout-card" onclick="selectLayout('modern')">
+                            <div class="layout-preview layout-modern">
+                                <span class="layout-name">Modern</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="admin-footer">
+            <button onclick="saveSettings()" class="btn btn-primary btn-large">
+                <i class="icon-save"></i> Save All Settings
+            </button>
+        </footer>
     </div>
 
     <script src="admin.js"></script>

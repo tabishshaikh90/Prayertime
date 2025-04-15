@@ -1,16 +1,18 @@
-// Global variables for audio playback
 const audioPlayer = new Audio();
 let audioEnabled = false;
 let playedAzans = { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false };
 let playedAlarm = false;
 let playedReminders = {};
 let lastHadithUpdate = null;
-let lastMakruhState = false; // Track Makruh Waqt state to detect start
-let lastHour = -1; // Track the last hour for hourly buzzer
-let playedMakruhBuzzer = false; // Track if Makruh buzzer has been played for the current period
-let settings = null; // Store the current settings globally to avoid reloading repeatedly
+let lastMakruhState = false;
+let lastHour = -1;
+let playedMakruhBuzzer = false;
+let settings = null;
+let currentTimings = null;
+let currentlyPlayingReminder = null;
+let userInteracted = false;
+let prayerTimes30Days = {};
 
-// Azan audio files
 const azaanFiles = {
     Fajr: 'azan/fajr.mp3',
     Dhuhr: 'azan/dhuhr.mp3',
@@ -18,21 +20,51 @@ const azaanFiles = {
     Maghrib: 'azan/maghrib.mp3',
     Isha: 'azan/isha.mp3',
     MakruhBuzzer: 'azan/buzzer.mp3',
-    HourlyBuzzer: 'azan/Alhamd.mp3'
+    HourlyBuzzer: 'azan/Alhamd.mp3',
+    Silent: 'azan/silent.mp3'
 };
 
-// Enable audio playback after user interaction
-document.addEventListener('click', () => {
-    audioEnabled = true;
-    console.log("Audio enabled after user interaction.");
-});
+function getDateRange() {
+    const today = new Date();
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + 29); // 30 days total, including today
 
-// Check if the device is online
-function isOnline() {
-    return navigator.onLine;
+    const formatDate = (date) => {
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+        const year = date.getFullYear();
+        return `${day}-${month}-${year}`;
+    };
+
+    return {
+        from: formatDate(today),
+        to: formatDate(endDate)
+    };
 }
 
-// Toggle offline indicator (red dot in top-right corner)
+// Show interaction popup if no interaction
+function showInteractionPopup() {
+    if (!userInteracted) {
+        document.getElementById('interaction-popup').style.display = 'block';
+    }
+}
+
+// Unlock audio on first user interaction
+document.addEventListener('click', () => {
+    if (!userInteracted) {
+        userInteracted = true;
+        audioEnabled = true;
+        document.getElementById('interaction-popup').style.display = 'none';
+        console.log("Audio enabled after user interaction.");
+        audioPlayer.src = azaanFiles.Silent;
+        audioPlayer.play().then(() => {
+            console.log("Silent audio played successfully, unlocking autoplay.");
+        }).catch(error => console.warn("Silent audio play failed:", error));
+    }
+});
+
+function isOnline() { return navigator.onLine; }
+
 function toggleOfflineIndicator(isOffline) {
     let offlineIndicator = document.getElementById('offline-indicator');
     if (!offlineIndicator) {
@@ -50,346 +82,374 @@ function toggleOfflineIndicator(isOffline) {
     offlineIndicator.style.display = isOffline ? 'block' : 'none';
 }
 
-// Load settings from localStorage
-function loadSettings() {
+const BASE_URL = window.location.origin;
+
+async function loadSettings() {
     const defaultSettings = {
-        location: 'Mumbai',
-        calcMethod: '2', // Default to Islamic Society of North America (ISNA)
-        asrMethod: 'hanafi', // Default to Hanafi
+        city: 'Mumbai',
+        state: '',
+        country: 'India',
+        calcMethod: '2',
+        asrMethod: 'hanafi',
+        adjustment: '0',
         alarmTime: '00:00',
         alarmAudio: '',
-        reminders: []
+        reminders: [],
+        theme: 'default',
+        layout: 'default'
     };
-    const storedSettings = JSON.parse(localStorage.getItem('settings')) || defaultSettings;
-    console.log("Loaded settings:", storedSettings);
-    return storedSettings;
+    try {
+        const response = await fetch(`${BASE_URL}/prayer3/save_settings.php`);
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        const loadedSettings = await response.json();
+        const settings = {
+            city: loadedSettings.city || loadedSettings.location || 'Mumbai',
+            state: loadedSettings.state || '',
+            country: loadedSettings.country || 'India',
+            calcMethod: loadedSettings.calcMethod || '2',
+            asrMethod: loadedSettings.asrMethod || 'hanafi',
+            adjustment: loadedSettings.adjustment || '0',
+            alarmTime: loadedSettings.alarmTime || '00:00',
+            alarmAudio: loadedSettings.alarmAudio || '',
+            reminders: loadedSettings.reminders || [],
+            theme: loadedSettings.theme || 'default',
+            layout: loadedSettings.layout || 'default'
+        };
+        console.log("Loaded settings from server:", settings);
+        localStorage.setItem('settings', JSON.stringify(settings));
+        return settings;
+    } catch (error) {
+        console.error("Error fetching settings:", error);
+        const storedSettings = JSON.parse(localStorage.getItem('settings')) || defaultSettings;
+        return storedSettings;
+    }
 }
 
-// Get today's date in YYYY-MM-DD format
-function getTodayDate() {
+
+async function pollSettings() {
+    try {
+        const response = await fetch(`${BASE_URL}/prayer3/save_settings.php`);
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        const newSettings = await response.json();
+        if (JSON.stringify(newSettings) !== JSON.stringify(settings)) {
+            settings = {
+                city: newSettings.city || newSettings.location || 'Mumbai',
+                state: newSettings.state || '',
+                country: newSettings.country || 'India',
+                calcMethod: newSettings.calcMethod || '2',
+                asrMethod: newSettings.asrMethod || 'hanafi',
+                adjustment: newSettings.adjustment || '0',
+                alarmTime: newSettings.alarmTime || '00:00',
+                alarmAudio: newSettings.alarmAudio || '',
+                reminders: newSettings.reminders || [],
+                theme: newSettings.theme || 'default',
+                layout: newSettings.layout || 'default'
+            };
+            console.log("Settings updated from server via polling:", settings);
+            localStorage.setItem('settings', JSON.stringify(settings));
+            document.body.classList.remove('theme-blue', 'theme-dark', 'theme-light');
+            if (settings.theme && settings.theme !== 'default') {
+                document.body.classList.add(`theme-${settings.theme}`);
+            }
+            const prayerGrid = document.querySelector('.prayer-grid');
+            prayerGrid.classList.remove('layout-default', 'layout-compact', 'layout-modern');
+            if (settings.layout) prayerGrid.classList.add(`layout-${settings.layout}`);
+            playedAzans = { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false };
+            playedAlarm = false;
+            playedReminders = {};
+            playedMakruhBuzzer = false;
+            lastHour = -1;
+            prayerTimes30Days = {}; // Clear cache
+            currentTimings = await fetchDayPrayerTimes(getTodayDate()); // Force refetch today’s timings
+            if (currentTimings) {
+                console.log("New timings applied:", currentTimings);
+                updateTimeAndNextPrayer(currentTimings);
+            } else {
+                console.error("Failed to fetch new prayer times");
+            }
+            fetchPrayerTimes30Days(); // Refetch 30-day data in background
+        }
+    } catch (error) {
+        console.error("Error polling settings:", error);
+        toggleOfflineIndicator(true);
+    }
+}
+
+// Add listener for General Settings updates
+window.addEventListener('message', async (event) => {
+    if (event.origin === BASE_URL && event.data.type === 'GENERAL_SETTINGS_UPDATED') {
+        const updatedGeneralSettings = event.data.settings;
+        const generalKeys = ['city', 'state', 'country', 'calcMethod', 'asrMethod', 'adjustment'];
+        const hasGeneralChanges = generalKeys.some(key => settings[key] !== updatedGeneralSettings[key]);
+
+        if (hasGeneralChanges) {
+            // Update only General Settings
+            settings.city = updatedGeneralSettings.city;
+            settings.state = updatedGeneralSettings.state;
+            settings.country = updatedGeneralSettings.country;
+            settings.calcMethod = updatedGeneralSettings.calcMethod;
+            settings.asrMethod = updatedGeneralSettings.asrMethod;
+            settings.adjustment = updatedGeneralSettings.adjustment;
+
+            console.log("General settings updated from admin:", settings);
+            localStorage.setItem('settings', JSON.stringify(settings));
+            prayerTimes30Days = {}; // Clear cache to force refetch
+            currentTimings = await fetchPrayerTimes();
+            if (currentTimings) updateTimeAndNextPrayer(currentTimings);
+        }
+    }
+});
+
+
+function getTodayDate(offset = 0) {
     const today = new Date();
+    today.setDate(today.getDate() + offset);
     return `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
 }
 
-// Calculate Qaza time (2 hours after Jamaat time)
-function calculateQazaTime(jamaatTime) {
-    const [hours, minutes] = jamaatTime.split(':').map(Number);
-    let qazaHours = hours + 2;
-    if (qazaHours >= 24) qazaHours -= 24;
-    return `${qazaHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-}
-
-// Convert time string (HH:MM) to seconds since midnight
 function timeToSeconds(timeStr) {
+    if (!timeStr || typeof timeStr !== 'string') return -1;
     const [hours, minutes] = timeStr.split(':').map(Number);
+    if (isNaN(hours) || isNaN(minutes)) return -1;
     return hours * 3600 + minutes * 60;
 }
 
-// Convert seconds to HH:MM format
 function secondsToHHMM(seconds) {
+    if (seconds < 0) return '00:00';
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 
-// Fetch prayer times from Aladhan API with specific parameters, or load from cache if offline
-async function fetchPrayerTimes() {
-    const location = settings.location;
-    const calcMethod = settings.calcMethod;
-    const asrMethod = settings.asrMethod === 'hanafi' ? 1 : 0;
-    const todayDate = getTodayDate();
+function calculateQazaTime(ishaTime) {
+    const ishaSeconds = timeToSeconds(ishaTime);
+    if (ishaSeconds === -1) return 'N/A';
+    const midnightSeconds = 24 * 3600; // Midnight (24:00)
+    const qazaSeconds = (ishaSeconds + midnightSeconds) / 2; // Midpoint between Isha and midnight
+    return secondsToHHMM(Math.floor(qazaSeconds));
+}
 
-    const country = 'IN';
-    const state = 'Maharashtra';
+async function fetchPrayerTimes30Days() {
+    if (!settings) return;
+    const { city, state, country, calcMethod, asrMethod, adjustment } = settings;
     const shafaq = 'general';
-    const tune = '5,3,5,7,9,-1,0,-12,-6'; // Adjusted Isha tune to -12
+    const tune = '5,3,5,7,9,-1,0,8,-6';
     const timezonestring = 'Asia/Kolkata';
-
-    // Check if cached data exists
-    const cachedPrayerTimes = JSON.parse(localStorage.getItem('cachedPrayerTimes')) || {};
-    const cachedDate = cachedPrayerTimes.date || null;
-    const cachedTimings = cachedPrayerTimes.timings || null;
-    const cachedReadableDate = cachedPrayerTimes.readableDate || null;
-    const cachedHijriDate = cachedPrayerTimes.hijriDate || null;
-
-    if (!isOnline()) {
-        console.warn("Device is offline. Loading cached prayer times.");
-        toggleOfflineIndicator(true);
-        if (cachedTimings && cachedDate === todayDate) {
-            console.log("Using cached prayer times:", cachedTimings);
-            // Update UI with cached data
-            document.getElementById('fajr-begins').textContent = cachedTimings.Fajr;
-            document.getElementById('fajr-jamaat').textContent = cachedTimings.Fajr;
-            document.getElementById('fajr-additional').textContent = cachedTimings.Imsak;
-            document.getElementById('dhuhr-begins').textContent = cachedTimings.Dhuhr;
-            document.getElementById('dhuhr-jamaat').textContent = cachedTimings.Dhuhr;
-            document.getElementById('dhuhr-additional').textContent = cachedTimings.Sunrise;
-            document.getElementById('asr-begins').textContent = cachedTimings.Asr;
-            document.getElementById('asr-jamaat').textContent = cachedTimings.Asr;
-            document.getElementById('asr-additional').textContent = cachedTimings.Sunset;
-            document.getElementById('maghrib-begins').textContent = cachedTimings.Maghrib;
-            document.getElementById('maghrib-jamaat').textContent = cachedTimings.Maghrib;
-            document.getElementById('maghrib-additional').textContent = cachedTimings.Sunset;
-            document.getElementById('isha-begins').textContent = cachedTimings.Isha;
-            document.getElementById('isha-jamaat').textContent = cachedTimings.Isha;
-            document.getElementById('isha-qaza').textContent = calculateQazaTime(cachedTimings.Isha);
-            document.getElementById('gregorian-date').textContent = cachedReadableDate || 'N/A';
-            document.getElementById('islamic-date').textContent = cachedHijriDate || 'N/A';
-            return cachedTimings;
-        } else {
-            console.error("No valid cached prayer times available for today.");
-            document.getElementById('fajr-begins').textContent = 'N/A';
-            document.getElementById('fajr-jamaat').textContent = 'N/A';
-            document.getElementById('fajr-additional').textContent = 'N/A';
-            document.getElementById('dhuhr-begins').textContent = 'N/A';
-            document.getElementById('dhuhr-jamaat').textContent = 'N/A';
-            document.getElementById('dhuhr-additional').textContent = 'N/A';
-            document.getElementById('asr-begins').textContent = 'N/A';
-            document.getElementById('asr-jamaat').textContent = 'N/A';
-            document.getElementById('asr-additional').textContent = 'N/A';
-            document.getElementById('maghrib-begins').textContent = 'N/A';
-            document.getElementById('maghrib-jamaat').textContent = 'N/A';
-            document.getElementById('maghrib-additional').textContent = 'N/A';
-            document.getElementById('isha-begins').textContent = 'N/A';
-            document.getElementById('isha-jamaat').textContent = 'N/A';
-            document.getElementById('isha-qaza').textContent = 'N/A';
-            document.getElementById('gregorian-date').textContent = 'N/A';
-            document.getElementById('islamic-date').textContent = 'N/A';
-            return null;
-        }
-    }
+    const { from, to } = getDateRange();
 
     try {
-        const url = `http://api.aladhan.com/v1/timingsByCity?city=${location}&country=${country}&state=${state}&method=${calcMethod}&shafaq=${shafaq}&tune=${tune}&school=${asrMethod}&timezonestring=${timezonestring}&date=${todayDate}`;
-        console.log("Fetching prayer times with URL:", url);
-        console.log("Asr Method (school):", asrMethod === 1 ? "Hanafi" : "Standard");
+        const url = `https://api.aladhan.com/v1/calendarByCity/from/${from}/to/${to}?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&state=${encodeURIComponent(state || '')}&method=${calcMethod}&school=${asrMethod === 'hanafi' ? 1 : 0}&adjustment=${adjustment}&shafaq=${shafaq}&tune=${tune}&timezonestring=${timezonestring}&calendarMethod=MATHEMATICAL`;
+        console.log("Fetching 30-day prayer times from:", url);
 
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
+        const response = await fetch(url, { mode: 'cors', headers: { 'Accept': 'application/json' } });
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const data = await response.json();
 
-        if (!data.data) {
-            throw new Error("No prayer times data in API response");
-        }
+        prayerTimes30Days = {};
+        data.data.forEach(day => {
+            const date = day.date.gregorian.date.split('-').reverse().join('-'); // Convert DD-MM-YYYY to YYYY-MM-DD for internal consistency
+            prayerTimes30Days[date] = {
+                timings: day.timings,
+                readableDate: day.date.readable,
+                hijriDate: `${day.date.hijri.day} ${day.date.hijri.month.en} ${day.date.hijri.year}`,
+                holidays: day.date.hijri.holidays || []
+            };
+        });
 
-        const timings = data.data.timings;
-
-        console.log("API Response Timings:", timings);
-
-        document.getElementById('fajr-begins').textContent = timings.Fajr;
-        document.getElementById('fajr-jamaat').textContent = timings.Fajr;
-        document.getElementById('fajr-additional').textContent = timings.Imsak;
-        document.getElementById('dhuhr-begins').textContent = timings.Dhuhr;
-        document.getElementById('dhuhr-jamaat').textContent = timings.Dhuhr;
-        document.getElementById('dhuhr-additional').textContent = timings.Sunrise;
-        document.getElementById('asr-begins').textContent = timings.Asr;
-        document.getElementById('asr-jamaat').textContent = timings.Asr;
-        document.getElementById('asr-additional').textContent = timings.Sunset;
-        document.getElementById('maghrib-begins').textContent = timings.Maghrib;
-        document.getElementById('maghrib-jamaat').textContent = timings.Maghrib;
-        document.getElementById('maghrib-additional').textContent = timings.Sunset;
-        document.getElementById('isha-begins').textContent = timings.Isha;
-        document.getElementById('isha-jamaat').textContent = timings.Isha;
-        document.getElementById('isha-qaza').textContent = calculateQazaTime(timings.Isha);
-
-        // Set dates
-        const readableDate = data.data.date.readable;
-        const hijriDate = `${data.data.date.hijri.day} ${data.data.date.hijri.month.en} ${data.data.date.hijri.year}`;
-        document.getElementById('gregorian-date').textContent = readableDate;
-        document.getElementById('islamic-date').textContent = hijriDate;
-
-        // Cache the prayer times and dates
-        localStorage.setItem('cachedPrayerTimes', JSON.stringify({
-            date: todayDate,
-            timings: timings,
-            readableDate: readableDate,
-            hijriDate: hijriDate
-        }));
-        console.log("Cached prayer times for date:", todayDate);
-
+        localStorage.setItem('prayerTimes30Days', JSON.stringify(prayerTimes30Days));
         toggleOfflineIndicator(false);
-        return timings;
-    } catch (error) {
-        console.error("Error fetching prayer times:", error);
-        // Fallback to cached data if available
-        if (cachedTimings && cachedDate === todayDate) {
-            console.log("Falling back to cached prayer times:", cachedTimings);
-            toggleOfflineIndicator(true);
-            document.getElementById('fajr-begins').textContent = cachedTimings.Fajr;
-            document.getElementById('fajr-jamaat').textContent = cachedTimings.Fajr;
-            document.getElementById('fajr-additional').textContent = cachedTimings.Imsak;
-            document.getElementById('dhuhr-begins').textContent = cachedTimings.Dhuhr;
-            document.getElementById('dhuhr-jamaat').textContent = cachedTimings.Dhuhr;
-            document.getElementById('dhuhr-additional').textContent = cachedTimings.Sunrise;
-            document.getElementById('asr-begins').textContent = cachedTimings.Asr;
-            document.getElementById('asr-jamaat').textContent = cachedTimings.Asr;
-            document.getElementById('asr-additional').textContent = cachedTimings.Sunset;
-            document.getElementById('maghrib-begins').textContent = cachedTimings.Maghrib;
-            document.getElementById('maghrib-jamaat').textContent = cachedTimings.Maghrib;
-            document.getElementById('maghrib-additional').textContent = cachedTimings.Sunset;
-            document.getElementById('isha-begins').textContent = cachedTimings.Isha;
-            document.getElementById('isha-jamaat').textContent = cachedTimings.Isha;
-            document.getElementById('isha-qaza').textContent = calculateQazaTime(cachedTimings.Isha);
-            document.getElementById('gregorian-date').textContent = cachedReadableDate || 'N/A';
-            document.getElementById('islamic-date').textContent = cachedHijriDate || 'N/A';
-            return cachedTimings;
-        } else {
-            console.error("No valid cached prayer times available for today.");
-            document.getElementById('fajr-begins').textContent = 'N/A';
-            document.getElementById('fajr-jamaat').textContent = 'N/A';
-            document.getElementById('fajr-additional').textContent = 'N/A';
-            document.getElementById('dhuhr-begins').textContent = 'N/A';
-            document.getElementById('dhuhr-jamaat').textContent = 'N/A';
-            document.getElementById('dhuhr-additional').textContent = 'N/A';
-            document.getElementById('asr-begins').textContent = 'N/A';
-            document.getElementById('asr-jamaat').textContent = 'N/A';
-            document.getElementById('asr-additional').textContent = 'N/A';
-            document.getElementById('maghrib-begins').textContent = 'N/A';
-            document.getElementById('maghrib-jamaat').textContent = 'N/A';
-            document.getElementById('maghrib-additional').textContent = 'N/A';
-            document.getElementById('isha-begins').textContent = 'N/A';
-            document.getElementById('isha-jamaat').textContent = 'N/A';
-            document.getElementById('isha-qaza').textContent = 'N/A';
-            document.getElementById('gregorian-date').textContent = 'N/A';
-            document.getElementById('islamic-date').textContent = 'N/A';
-            return null;
+        console.log("30-day prayer times fetched:", prayerTimes30Days);
+
+        const todayDate = getTodayDate();
+        if (prayerTimes30Days[todayDate]) {
+            currentTimings = prayerTimes30Days[todayDate].timings;
+            updatePrayerUI(currentTimings, prayerTimes30Days[todayDate].readableDate, prayerTimes30Days[todayDate].hijriDate);
+            updateTimeAndNextPrayer(currentTimings);
         }
+    } catch (error) {
+        console.error("Error fetching 30-day prayer times:", error);
+        toggleOfflineIndicator(true);
     }
 }
 
-// Fetch Hadith data from load_hadiths.php with fallback to hadiths.json or cached data
-async function fetchHadith(day, prayer) {
-    console.log(`Fetching Hadith for Day ${day}, Prayer ${prayer}`);
+async function fetchPrayerTimes() {
+    if (!settings) return null;
+    const todayDate = getTodayDate();
+    prayerTimes30Days = JSON.parse(localStorage.getItem('prayerTimes30Days')) || {};
 
-    // Check if cached Hadith exists
+    if (!isOnline() && prayerTimes30Days[todayDate]) {
+        console.warn("Offline: Using cached prayer times.");
+        toggleOfflineIndicator(true);
+        const cached = prayerTimes30Days[todayDate];
+        updatePrayerUI(cached.timings, cached.readableDate, cached.hijriDate);
+        return cached.timings;
+    }
+
+    return await fetchDayPrayerTimes(todayDate); // Always fetch fresh for today
+}
+
+async function fetchDayPrayerTimes(date) {
+    const { city, state, country, calcMethod, asrMethod, adjustment } = settings;
+    const shafaq = 'general';
+    const tune = '5,3,5,7,9,-1,0,8,-6';
+    const timezonestring = 'Asia/Kolkata';
+
+    try {
+        let url = `http://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&state=${encodeURIComponent(state || '')}&method=${calcMethod}&school=${asrMethod === 'hanafi' ? 1 : 0}&adjustment=${adjustment}&shafaq=${shafaq}&tune=${tune}&timezonestring=${timezonestring}&date=${date}&calendarMethod=MATHEMATICAL`;
+        console.log("Fetching prayer times from:", url);
+
+        let response = await fetch(url, { mode: 'cors', redirect: 'follow' });
+        if (response.status === 302) {
+            const redirectUrl = new URL(response.headers.get('Location'), 'http://api.aladhan.com').href;
+            console.log("Redirecting to:", redirectUrl);
+            response = await fetch(redirectUrl, { mode: 'cors' });
+        }
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        const data = await response.json();
+        const timings = data.data.timings;
+        const readableDate = data.data.date.readable;
+        const hijriDate = `${data.data.date.hijri.day} ${data.data.date.hijri.month.en} ${data.data.date.hijri.year}`;
+        prayerTimes30Days[date] = { timings, readableDate, hijriDate, holidays: data.data.date.hijri.holidays || [] };
+        localStorage.setItem('prayerTimes30Days', JSON.stringify(prayerTimes30Days));
+        toggleOfflineIndicator(false);
+        console.log("Fetched timings:", timings);
+        updatePrayerUI(timings, readableDate, hijriDate);
+        return timings;
+    } catch (error) {
+        console.error("Error fetching prayer times:", error);
+        toggleOfflineIndicator(true);
+        return null;
+    }
+}
+
+function updatePrayerUI(timings, readableDate, hijriDate) {
+    const fields = [
+        { id: 'fajr-begins', value: timings?.Fajr },
+        // [Other fields...]
+        { id: 'gregorian-date', value: readableDate || 'Loading...' },
+        { id: 'islamic-date', value: hijriDate || 'Loading...' }
+    ];
+    fields.forEach(field => {
+        const element = document.getElementById(field.id);
+        if (element) {
+            element.textContent = field.value || 'N/A';
+        } else {
+            console.warn(`Element with ID ${field.id} not found`);
+        }
+    });
+    console.log("UI updated with:", { timings, readableDate, hijriDate });
+}
+
+async function fetchHadith(day, prayer) {
     const cachedHadiths = JSON.parse(localStorage.getItem('cachedHadiths')) || {};
     const hadithCacheKey = `hadith-${day}-${prayer}`;
     const cachedHadith = cachedHadiths[hadithCacheKey];
 
+    if (cachedHadith) {
+        return cachedHadith;
+    }
+
     if (!isOnline()) {
-        console.warn("Device is offline. Loading cached Hadith.");
         toggleOfflineIndicator(true);
-        if (cachedHadith) {
-            console.log(`Using cached Hadith for Day ${day}, Prayer ${prayer}:`, cachedHadith);
-            return cachedHadith;
-        } else {
-            console.error(`No cached Hadith available for Day ${day}, Prayer ${prayer}.`);
-            return {
-                Day: String(day),
-                Prayer: prayer,
-                English: 'Offline: No cached Hadith',
-                Source: 'N/A'
-            };
-        }
+        return { Day: String(day), Prayer: prayer, English: 'Offline: No cached Hadith', Source: 'N/A' };
     }
 
     try {
-        const response = await fetch(`load_hadiths.php?prayer=${prayer}&day=${day}`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
+        const response = await fetch(`${BASE_URL}/prayer3/load_hadiths.php?prayer=${prayer}&day=${day}`);
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const hadith = await response.json();
-        console.log(`Fetched Hadith from load_hadiths.php:`, hadith);
-
-        // Cache the Hadith
         cachedHadiths[hadithCacheKey] = hadith;
         localStorage.setItem('cachedHadiths', JSON.stringify(cachedHadiths));
-        console.log(`Cached Hadith for Day ${day}, Prayer ${prayer}`);
-
         toggleOfflineIndicator(false);
         return hadith;
     } catch (error) {
-        console.error(`Error fetching Hadith from load_hadiths.php: ${error.message}. Falling back to hadiths.json or cached data.`);
-        // Fallback to loading from hadiths.json
+        console.error(`Error fetching Hadith: ${error.message}`);
         try {
             const fallbackResponse = await fetch('hadiths.json');
-            if (!fallbackResponse.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
+            if (!fallbackResponse.ok) throw new Error(`HTTP error! Status: ${fallbackResponse.status}`);
             const hadiths = await fallbackResponse.json();
-            console.log(`Loaded hadiths.json:`, hadiths);
             const hadith = hadiths.find(h => h.Day === String(day) && h.Prayer === prayer);
             if (hadith) {
-                console.log(`Fetched Hadith from hadiths.json for Day ${day}, Prayer ${prayer}:`, hadith);
-                // Cache the Hadith
                 cachedHadiths[hadithCacheKey] = hadith;
                 localStorage.setItem('cachedHadiths', JSON.stringify(cachedHadiths));
-                console.log(`Cached Hadith from hadiths.json for Day ${day}, Prayer ${prayer}`);
                 return hadith;
-            } else {
-                console.log(`No Hadith found in hadiths.json for Day ${day}, Prayer ${prayer}`);
-                throw new Error('No Hadith found in hadiths.json');
             }
+            throw new Error('No Hadith found');
         } catch (fallbackError) {
-            console.error("Error fetching Hadith from hadiths.json:", fallbackError);
-            // Fallback to cached Hadith if available
-            if (cachedHadith) {
-                console.log(`Falling back to cached Hadith for Day ${day}, Prayer ${prayer}:`, cachedHadith);
-                toggleOfflineIndicator(true);
-                return cachedHadith;
+            console.error("Error fetching fallback Hadith:", fallbackError);
+            return { Day: String(day), Prayer: prayer, English: 'Unable to load Hadith', Source: 'N/A' };
+        }
+    }
+}
+
+async function displayHadithAndHolidays(timings) {
+    if (!timings) return;
+
+    const now = new Date();
+    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const startOfYear = new Date(now.getFullYear(), 0, 0);
+    const dayOfYear = Math.floor((now - startOfYear) / (1000 * 60 * 60 * 24));
+    const jsonDay = ((dayOfYear - 1) % 360) + 1;
+
+    const prayerTimes = [
+        { name: 'Fajr', time: timings.Fajr },
+        { name: 'Dhuhr', time: timings.Dhuhr },
+        { name: 'Asr', time: timings.Asr },
+        { name: 'Maghrib', time: timings.Maghrib },
+        { name: 'Isha', time: timings.Isha },
+    ];
+
+    let mostRecentPrayer = 'Isha';
+    let mostRecentPrayerSeconds = 0;
+
+    for (const prayer of prayerTimes) {
+        const prayerSeconds = timeToSeconds(prayer.time);
+        if (prayerSeconds !== -1 && currentSeconds >= prayerSeconds && prayerSeconds > mostRecentPrayerSeconds) {
+            mostRecentPrayer = prayer.name;
+            mostRecentPrayerSeconds = prayerSeconds;
+        }
+    }
+
+    const hadith = await fetchHadith(jsonDay, mostRecentPrayer);
+    let holidayIndex = 0;
+
+    const title = document.getElementById('hadith-title');
+    const content = document.getElementById('hadith-english');
+    const source = document.getElementById('hadith-source');
+
+    title.textContent = 'HADITH';
+    content.textContent = hadith.English || 'Not available';
+    source.textContent = hadith.Source ? `Source: ${hadith.Source}` : 'Source: Not available';
+
+    const holidays = [];
+    for (let i = 0; i < 30; i++) {
+        const date = getTodayDate(i);
+        if (prayerTimes30Days[date]?.holidays?.length > 0) {
+            holidays.push(...prayerTimes30Days[date].holidays.map(h => `${h} on ${prayerTimes30Days[date].readableDate}`));
+        }
+    }
+    console.log("Holidays array:", holidays);
+
+    function updateHadithDisplay() {
+        if (Date.now() % 30000 < 20000) { // 20s Hadith
+            title.textContent = 'HADITH';
+            content.textContent = hadith.English || 'Not available';
+            source.textContent = hadith.Source ? `Source: ${hadith.Source}` : 'Source: Not available';
+        } else { // 10s Holidays
+            title.textContent = 'HOLIDAY';
+            if (holidays.length === 0) {
+                content.textContent = 'No upcoming holidays';
             } else {
-                // Return a default Hadith if both attempts fail
-                return {
-                    Day: String(day),
-                    Prayer: prayer,
-                    English: 'Unable to load Hadith',
-                    Source: 'N/A'
-                };
+                content.textContent = holidays[holidayIndex];
+                holidayIndex = (holidayIndex + 1) % holidays.length;
             }
+            source.textContent = '';
         }
     }
+
+    setInterval(updateHadithDisplay, 1000);
 }
 
-// Display the appropriate Hadith based on the current day and most recent prayer
-async function displayHadith(timings) {
-    try {
-        const now = new Date();
-        const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-
-        // Calculate the day of the year (1 to 365) to map to the JSON "Day" field (1 to 360)
-        const startOfYear = new Date(now.getFullYear(), 0, 0);
-        const dayOfYear = Math.floor((now - startOfYear) / (1000 * 60 * 60 * 24));
-        const jsonDay = ((dayOfYear - 1) % 360) + 1; // Ensure it stays within 1 to 360
-
-        // Convert prayer times to seconds for comparison
-        const prayerTimes = [
-            { name: 'Fajr', time: timings.Fajr },
-            { name: 'Dhuhr', time: timings.Dhuhr },
-            { name: 'Asr', time: timings.Asr },
-            { name: 'Maghrib', time: timings.Maghrib },
-            { name: 'Isha', time: timings.Isha },
-        ];
-
-        let mostRecentPrayer = 'Isha'; // Default to Isha from the previous day if before Fajr
-        let mostRecentPrayerSeconds = 0;
-
-        for (const prayer of prayerTimes) {
-            const prayerSeconds = timeToSeconds(prayer.time);
-            if (currentSeconds >= prayerSeconds && prayerSeconds > mostRecentPrayerSeconds) {
-                mostRecentPrayer = prayer.name;
-                mostRecentPrayerSeconds = prayerSeconds;
-            }
-        }
-
-        // Check if we need to update the Hadith
-        const currentHadithKey = `${jsonDay}-${mostRecentPrayer}`;
-        if (lastHadithUpdate !== currentHadithKey) {
-            const hadith = await fetchHadith(jsonDay, mostRecentPrayer);
-            document.getElementById('hadith-english').textContent = hadith.English || 'Not available';
-            document.getElementById('hadith-source').textContent = hadith.Source ? `Source: ${hadith.Source}` : 'Source: Not available';
-            lastHadithUpdate = currentHadithKey;
-            console.log(`Hadith updated for Day ${jsonDay} after ${mostRecentPrayer}`);
-        }
-    } catch (error) {
-        console.error("Error in displayHadith:", error);
-        document.getElementById('hadith-english').textContent = 'Error loading Hadith';
-        document.getElementById('hadith-source').textContent = '';
-    }
-}
-
-// Reset played flags for Azan, alarm, reminders, and Makruh buzzer at midnight
 function resetPlayedFlags() {
     const now = new Date();
     if (now.getHours() === 0 && now.getMinutes() === 0 && now.getSeconds() === 0) {
@@ -398,310 +458,277 @@ function resetPlayedFlags() {
         playedReminders = {};
         playedMakruhBuzzer = false;
         lastHour = -1;
+        currentlyPlayingReminder = null;
         console.log("Reset played flags at midnight.");
     }
 }
 
-// Update current time, highlight current Jamaat with prayer-specific color, display next prayer with remaining time in HH:MM, and Hadith
+function showPlayPrompt(reminderIndex, audio) {
+    const nextPrayerElement = document.getElementById('next-prayer');
+    nextPrayerElement.textContent = `Reminder ${reminderIndex + 1} Ready - Click to Play`;
+    nextPrayerElement.classList.add('play-prompt');
+    nextPrayerElement.onclick = () => {
+        audioPlayer.src = audio;
+        audioPlayer.play().then(() => {
+            currentlyPlayingReminder = reminderIndex;
+            updateTimeAndNextPrayer(currentTimings);
+        }).catch(error => console.error(`Error playing Reminder ${reminderIndex}:`, error));
+    };
+}
+
 async function updateTimeAndNextPrayer(timings) {
-    try {
-        if (!timings) {
-            console.warn("No timings available, skipping updateTimeAndNextPrayer");
-            return;
+    if (!timings || typeof timings !== 'object') {
+        document.getElementById('next-prayer').textContent = "Error: Prayer times unavailable";
+        return;
+    }
+
+    const now = new Date();
+    const currentTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    document.getElementById('current-time').textContent = currentTime;
+
+    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentSecond = now.getSeconds();
+
+    resetPlayedFlags();
+
+    if (!userInteracted) showInteractionPopup();
+
+    if (currentHour !== lastHour && currentMinute === 0 && currentSecond <= 60) {
+        if (audioEnabled && userInteracted) {
+            audioPlayer.src = azaanFiles.HourlyBuzzer;
+            audioPlayer.play().catch(error => console.error("Error playing hourly buzzer:", error));
         }
+        lastHour = currentHour;
+    }
 
-        const now = new Date();
-        const currentTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        document.getElementById('current-time').textContent = currentTime;
+    const prayers = [
+        { name: 'Fajr', time: timings.Fajr, audio: azaanFiles.Fajr },
+        { name: 'Dhuhr', time: timings.Dhuhr, audio: azaanFiles.Dhuhr },
+        { name: 'Asr', time: timings.Asr, audio: azaanFiles.Asr },
+        { name: 'Maghrib', time: timings.Maghrib, audio: azaanFiles.Maghrib },
+        { name: 'Isha', time: timings.Isha, audio: azaanFiles.Isha },
+    ];
 
-        const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-        const currentHour = now.getHours();
-        const currentMinute = now.getMinutes();
-        const currentSecond = now.getSeconds();
-
-        resetPlayedFlags();
-
-        // Check for hourly buzzer (play Alhamd.mp3 at the start of every hour)
-        if (currentHour !== lastHour && currentMinute === 0 && currentSecond <= 60) {
-            if (audioEnabled) {
-                console.log(`Playing hourly buzzer at ${currentHour}:00: ${azaanFiles.HourlyBuzzer}`);
-                audioPlayer.src = azaanFiles.HourlyBuzzer;
+    const timeWindow = 60;
+    for (const prayer of prayers) {
+        const prayerSeconds = timeToSeconds(prayer.time);
+        if (prayerSeconds === -1) continue;
+        const diff = currentSeconds - prayerSeconds;
+        if (diff >= 0 && diff <= timeWindow && !playedAzans[prayer.name]) {
+            if (audioEnabled && userInteracted) {
+                audioPlayer.src = prayer.audio;
                 audioPlayer.play().then(() => {
-                    console.log("Hourly buzzer played successfully.");
-                }).catch(error => {
-                    console.error("Error playing hourly buzzer:", error);
-                });
-            } else {
-                console.warn("Audio not enabled. User interaction required to play hourly buzzer.");
-            }
-            lastHour = currentHour;
-        }
-
-        // Check for Azan playback with a 60-second window
-        const prayers = [
-            { name: 'Fajr', time: timings.Fajr, audio: azaanFiles.Fajr },
-            { name: 'Dhuhr', time: timings.Dhuhr, audio: azaanFiles.Dhuhr },
-            { name: 'Asr', time: timings.Asr, audio: azaanFiles.Asr },
-            { name: 'Maghrib', time: timings.Maghrib, audio: azaanFiles.Maghrib },
-            { name: 'Isha', time: timings.Isha, audio: azaanFiles.Isha },
-        ];
-
-        const timeWindow = 60; // 60-second window to trigger Azan
-
-        for (const prayer of prayers) {
-            const prayerSeconds = timeToSeconds(prayer.time);
-            const diff = currentSeconds - prayerSeconds;
-            console.log(`Checking ${prayer.name}: Current=${currentSeconds}s, Prayer=${prayerSeconds}s, Diff=${diff}s, Played=${playedAzans[prayer.name]}`);
-            if (diff >= 0 && diff <= timeWindow && !playedAzans[prayer.name]) {
-                if (audioEnabled) {
-                    console.log(`Playing Azan for ${prayer.name}: ${prayer.audio}`);
-                    audioPlayer.src = prayer.audio;
-                    audioPlayer.play().then(() => {
-                        console.log(`Azan for ${prayer.name} played successfully.`);
-                    }).catch(error => {
-                        console.error(`Error playing Azan for ${prayer.name}:`, error);
-                    });
                     playedAzans[prayer.name] = true;
-                } else {
-                    console.warn(`Audio not enabled. User interaction required to play Azan for ${prayer.name}.`);
-                }
+                }).catch(error => console.error(`Error playing Azan for ${prayer.name}:`, error));
+            } else if (!userInteracted) {
+                console.log(`Azan for ${prayer.name} skipped due to no user interaction.`);
             }
         }
+    }
 
-        // Check for Alarm playback using the latest settings
-        const alarmTime = settings.alarmTime;
-        const alarmAudio = settings.alarmAudio;
-        const alarmSeconds = timeToSeconds(alarmTime);
+    const alarmTime = settings?.alarmTime || '00:00';
+    const alarmAudio = settings?.alarmAudio || '';
+    const alarmSeconds = timeToSeconds(alarmTime);
+    if (alarmSeconds !== -1) {
         const alarmDiff = currentSeconds - alarmSeconds;
-        console.log(`Checking Alarm: Current=${currentSeconds}s, Alarm=${alarmSeconds}s, Diff=${alarmDiff}s, Played=${playedAlarm}, Audio=${alarmAudio}`);
         if (alarmDiff >= 0 && alarmDiff <= timeWindow && !playedAlarm && alarmAudio) {
-            if (audioEnabled) {
-                console.log(`Playing Alarm: ${alarmAudio}`);
+            if (audioEnabled && userInteracted) {
                 audioPlayer.src = alarmAudio;
                 audioPlayer.play().then(() => {
-                    console.log("Alarm played successfully.");
-                }).catch(error => {
-                    console.error("Error playing Alarm:", error);
-                });
-                playedAlarm = true;
-            } else {
-                console.warn("Audio not enabled. User interaction required to play Alarm.");
+                    playedAlarm = true;
+                }).catch(error => console.error("Error playing Alarm:", error));
             }
         }
+    }
 
-        // Check for Reminders playback using the latest settings
-        const reminders = settings.reminders || [];
-        console.log("Checking Reminders:", reminders);
-        console.log("Audio Enabled:", audioEnabled);
-        console.log("Current Time (seconds):", currentSeconds);
-        const newPlayedReminders = {};
-        reminders.forEach((_, index) => {
-            if (playedReminders[index] !== undefined) {
-                newPlayedReminders[index] = playedReminders[index];
-            } else {
-                newPlayedReminders[index] = false;
-            }
-        });
-        playedReminders = newPlayedReminders;
-        console.log("Played Reminders State:", playedReminders);
+    const reminders = settings?.reminders || [];
+    reminders.forEach((reminder, index) => {
+        const time = reminder?.time;
+        let audio = reminder?.audio;
+        const repeat = reminder?.repeat || false;
+        if (audio && !audio.startsWith('azan/')) audio = `azan/${audio}`;
+        const reminderSeconds = timeToSeconds(time);
+        if (reminderSeconds === -1) return;
+        const diff = currentSeconds - reminderSeconds;
 
-        reminders.forEach((reminder, index) => {
-            const time = reminder.time;
-            let audio = reminder.audio;
-            if (audio && !audio.startsWith('azan/')) {
-                audio = `azan/${audio}`;
-                console.warn(`Fixed audio path for Reminder ${index}: ${audio}`);
-            }
-            const reminderSeconds = timeToSeconds(time);
-            const diff = currentSeconds - reminderSeconds;
-            console.log(`Checking Reminder ${index}: Time=${time}, Current=${currentSeconds}s, Reminder=${reminderSeconds}s, Diff=${diff}s, Played=${playedReminders[index]}, Audio=${audio}, AudioEnabled=${audioEnabled}`);
-            if (diff >= 0 && diff <= timeWindow && !playedReminders[index] && audio) {
-                if (audioEnabled) {
-                    console.log(`Playing Reminder ${index}: ${audio}`);
-                    audioPlayer.src = audio;
-                    audioPlayer.play().then(() => {
-                        console.log(`Reminder ${index} played successfully.`);
-                    }).catch(error => {
-                        console.error(`Error playing Reminder ${index}:`, error);
-                    });
-                    playedReminders[index] = true;
-                } else {
-                    console.warn(`Audio not enabled. User interaction required to play Reminder ${index}.`);
-                }
-            } else {
-                console.log(`Reminder ${index} not played: Diff=${diff}, Played=${playedReminders[index]}, Audio=${audio}, AudioEnabled=${audioEnabled}`);
-            }
-        });
-
-        // Determine current Jamaat and next prayer
-        let currentPrayer = null;
-        let mostRecentPrayerSeconds = -Infinity;
-        let nextPrayer = null;
-        let nextPrayerSeconds = Infinity;
-
-        for (const prayer of prayers) {
-            const prayerSeconds = timeToSeconds(prayer.time);
-            // Find the most recent prayer (current Jamaat)
-            if (currentSeconds >= prayerSeconds && prayerSeconds > mostRecentPrayerSeconds) {
-                currentPrayer = prayer.name;
-                mostRecentPrayerSeconds = prayerSeconds;
-            }
-            // Find the next prayer
-            if (prayerSeconds > currentSeconds && prayerSeconds < nextPrayerSeconds) {
-                nextPrayer = prayer;
-                nextPrayerSeconds = prayerSeconds;
-            }
-        }
-
-        // If no prayer has occurred yet today, default to Isha from the previous day
-        if (!currentPrayer) {
-            currentPrayer = 'Isha';
-        }
-
-        // Calculate remaining time to next prayer in HH:MM format
-        const nextPrayerElement = document.getElementById('next-prayer');
-        let isMakruh = false;
-        let makruhEndSeconds = 0;
-
-        // Define Makruh Waqt periods
-        const imsakSeconds = timeToSeconds(timings.Imsak);
-        const sunriseSeconds = timeToSeconds(timings.Sunrise);
-        const dhuhrSeconds = timeToSeconds(timings.Dhuhr);
-        const asrSeconds = timeToSeconds(timings.Asr);
-        const sunsetSeconds = timeToSeconds(timings.Sunset);
-
-        // Makruh Waqt 1: From Subah Sadiq (Imsak) to Sunrise
-        if (currentSeconds >= imsakSeconds && currentSeconds < sunriseSeconds) {
-            isMakruh = true;
-            makruhEndSeconds = sunriseSeconds;
-            console.log("Makruh Waqt: Subah Sadiq to Sunrise");
-        }
-        // Makruh Waqt 2: 5 minutes before Zohr (sun at zenith)
-        const dhuhrMakruhStart = dhuhrSeconds - 5 * 60; // 5 minutes before Zohr
-        if (currentSeconds >= dhuhrMakruhStart && currentSeconds < dhuhrSeconds) {
-            isMakruh = true;
-            makruhEndSeconds = dhuhrSeconds;
-            console.log("Makruh Waqt: Sun at Zenith (before Zohr)");
-        }
-        // Makruh Waqt 3: From Asr to Sunset
-        if (currentSeconds >= asrSeconds && currentSeconds < sunsetSeconds) {
-            isMakruh = true;
-            makruhEndSeconds = sunsetSeconds;
-            console.log("Makruh Waqt: Asr to Sunset");
-        }
-
-        // Check if Makruh Waqt just started to play the buzzer
-        if (isMakruh && !lastMakruhState && !playedMakruhBuzzer) {
-            if (audioEnabled) {
-                console.log(`Makruh Waqt started at ${currentTime}. Playing buzzer: ${azaanFiles.MakruhBuzzer}`);
-                audioPlayer.src = azaanFiles.MakruhBuzzer;
+        if (diff >= 0 && diff <= timeWindow && (!playedReminders[index] || repeat) && audio) {
+            if (audioEnabled && userInteracted) {
+                audioPlayer.src = audio;
                 audioPlayer.play().then(() => {
-                    console.log("Makruh buzzer played successfully.");
-                }).catch(error => {
-                    console.error("Error playing Makruh buzzer:", error);
-                });
-                playedMakruhBuzzer = true;
-            } else {
-                console.warn("Audio not enabled. User interaction required to play Makruh buzzer.");
+                    currentlyPlayingReminder = index;
+                    if (!repeat) playedReminders[index] = true;
+                }).catch(error => console.error(`Error playing Reminder ${index}:`, error));
+            } else if (!userInteracted) {
+                showPlayPrompt(index, audio);
+                if (!repeat) playedReminders[index] = true;
             }
-        } else if (!isMakruh && lastMakruhState) {
-            // Reset the Makruh buzzer flag when Makruh Waqt ends
-            playedMakruhBuzzer = false;
         }
-        lastMakruhState = isMakruh;
+    });
 
-        if (isMakruh) {
-            // Display Makruh Waqt warning
-            const remainingSeconds = makruhEndSeconds - currentSeconds;
-            const remainingTime = secondsToHHMM(remainingSeconds);
-            nextPrayerElement.textContent = `Makruh Waqt ends in ${remainingTime}`;
-            nextPrayerElement.classList.add('makruh-warning');
-        } else {
-            // Display next prayer with remaining time in HH:MM
-            nextPrayerElement.classList.remove('makruh-warning');
-            if (!nextPrayer) {
-                // If no upcoming prayer today, use Fajr of the next day
-                nextPrayer = prayers[0]; // Fajr
-                nextPrayerSeconds = timeToSeconds(nextPrayer.time) + 24 * 3600; // Add 24 hours
+    let currentPrayer = null;
+    let mostRecentPrayerSeconds = -Infinity;
+    let nextPrayer = null;
+    let nextPrayerSeconds = Infinity;
+    let nextPrayerDate = null;
+
+    for (const prayer of prayers) {
+        const prayerSeconds = timeToSeconds(prayer.time);
+        if (prayerSeconds === -1) continue;
+        if (currentSeconds >= prayerSeconds && prayerSeconds > mostRecentPrayerSeconds) {
+            currentPrayer = prayer.name;
+            mostRecentPrayerSeconds = prayerSeconds;
+        }
+        if (prayerSeconds > currentSeconds && prayerSeconds < nextPrayerSeconds) {
+            nextPrayer = prayer;
+            nextPrayerSeconds = prayerSeconds;
+            nextPrayerDate = getTodayDate(0); // Today
+        }
+    }
+
+    if (!currentPrayer) currentPrayer = 'Isha';
+
+    if (!nextPrayer) {
+        nextPrayer = prayers[0];
+        nextPrayerSeconds = timeToSeconds(nextPrayer.time) + 24 * 3600;
+        nextPrayerDate = getTodayDate(1); // Tomorrow
+    }
+
+    const imsakSeconds = timeToSeconds(timings.Imsak);
+    const sunriseSeconds = timeToSeconds(timings.Sunrise);
+    const dhuhrSeconds = timeToSeconds(timings.Dhuhr);
+    const asrSeconds = timeToSeconds(timings.Asr);
+    const sunsetSeconds = timeToSeconds(timings.Sunset);
+
+    let isMakruh = false;
+    let makruhEndSeconds = 0;
+
+    if (imsakSeconds !== -1 && sunriseSeconds !== -1 && currentSeconds >= imsakSeconds && currentSeconds < sunriseSeconds) {
+        isMakruh = true;
+        makruhEndSeconds = sunriseSeconds;
+    } else if (dhuhrSeconds !== -1 && currentSeconds >= (dhuhrSeconds - 300) && currentSeconds < dhuhrSeconds) {
+        isMakruh = true;
+        makruhEndSeconds = dhuhrSeconds;
+    } else if (sunsetSeconds !== -1 && currentSeconds >= (sunsetSeconds - 300) && currentSeconds < sunsetSeconds) {
+        isMakruh = true;
+        makruhEndSeconds = sunsetSeconds;
+    }
+
+    if (isMakruh && !lastMakruhState && !playedMakruhBuzzer) {
+        if (audioEnabled && userInteracted) {
+            audioPlayer.src = azaanFiles.MakruhBuzzer;
+            audioPlayer.play().then(() => {
+                playedMakruhBuzzer = true;
+            }).catch(error => console.error("Error playing Makruh buzzer:", error));
+        }
+    } else if (!isMakruh && lastMakruhState) {
+        playedMakruhBuzzer = false;
+    }
+    lastMakruhState = isMakruh;
+
+    const nextPrayerElement = document.getElementById('next-prayer');
+    if (isMakruh) {
+        const remainingSeconds = makruhEndSeconds - currentSeconds;
+        const remainingTime = secondsToHHMM(remainingSeconds);
+        nextPrayerElement.innerHTML = `<strong style="color: #FFFFFF; background-color: #FF0000; padding: 2px 5px; font-weight: bold;">Makruh Waqt ends at ${remainingTime}</strong>`;
+        nextPrayerElement.classList.add('makruh-warning');
+        nextPrayerElement.classList.remove('play-prompt');
+        nextPrayerElement.onclick = null;
+    } else if (currentlyPlayingReminder) {
+        const reminderAudio = settings.reminders[currentlyPlayingReminder].audio.split('/').pop().replace(/\.[^/.]+$/, '');
+        function updateReminderDisplay() {
+            const timeElapsed = Date.now() % 25000;
+            if (timeElapsed < 10000) { // 10s audio name
+                nextPrayerElement.textContent = `${reminderAudio} Playing`;
+            } else { // 15s next prayer
+                const remainingSeconds = nextPrayerSeconds - currentSeconds;
+                const remainingTime = secondsToHHMM(remainingSeconds);
+                nextPrayerElement.textContent = `Next Prayer: ${nextPrayer.name} in ${remainingTime}`;
             }
+        }
+        updateReminderDisplay();
+        setInterval(updateReminderDisplay, 1000);
+        nextPrayerElement.classList.remove('makruh-warning', 'play-prompt');
+        nextPrayerElement.onclick = () => {
+            audioPlayer.pause();
+            currentlyPlayingReminder = null;
+            updateTimeAndNextPrayer(timings);
+        };
+    } else {
+        nextPrayerElement.classList.remove('makruh-warning');
+        if (!nextPrayerElement.classList.contains('play-prompt')) {
+            nextPrayerElement.onclick = null;
             const remainingSeconds = nextPrayerSeconds - currentSeconds;
             const remainingTime = secondsToHHMM(remainingSeconds);
             nextPrayerElement.textContent = `Next Prayer: ${nextPrayer.name} in ${remainingTime}`;
         }
-
-        // Highlight the current Jamaat with prayer-specific color or Makruh highlight
-        const prayerBoxes = ['fajr-box', 'dhuhr-box', 'asr-box', 'maghrib-box', 'isha-box'];
-        const highlightClasses = ['fajr-highlight', 'dhuhr-highlight', 'asr-highlight', 'maghrib-highlight', 'isha-highlight'];
-
-        // Remove all highlight classes from all prayer boxes
-        prayerBoxes.forEach(box => {
-            const element = document.getElementById(box);
-            highlightClasses.forEach(cls => element.classList.remove(cls));
-            element.classList.remove('makruh-highlight'); // Remove Makruh highlight as well
-        });
-
-        // Apply the appropriate highlight class based on the current prayer
-        const currentBoxId = `${currentPrayer.toLowerCase()}-box`;
-        const currentBox = document.getElementById(currentBoxId);
-        if (isMakruh) {
-            // Apply Makruh highlight (red blinking) during Makruh Waqt
-            currentBox.classList.add('makruh-highlight');
-        } else {
-            // Apply the prayer-specific highlight
-            const highlightClass = `${currentPrayer.toLowerCase()}-highlight`;
-            currentBox.classList.add(highlightClass);
-        }
-
-        // Update Hadith display
-        await displayHadith(timings);
-    } catch (error) {
-        console.error("Error in updateTimeAndNextPrayer:", error);
     }
+
+    const prayerBoxes = ['fajr-box', 'dhuhr-box', 'asr-box', 'maghrib-box', 'isha-box'];
+    const highlightClasses = ['fajr-highlight', 'dhuhr-highlight', 'asr-highlight', 'maghrib-highlight', 'isha-highlight'];
+
+    prayerBoxes.forEach(box => {
+        const element = document.getElementById(box);
+        highlightClasses.forEach(cls => element.classList.remove(cls));
+        element.classList.remove('makruh-highlight');
+    });
+
+    const currentBoxId = `${currentPrayer.toLowerCase()}-box`;
+    const currentBox = document.getElementById(currentBoxId);
+    if (isMakruh) {
+        currentBox.classList.add('makruh-highlight');
+    } else {
+        currentBox.classList.add(`${currentPrayer.toLowerCase()}-highlight`);
+    }
+
+    await displayHadithAndHolidays(timings);
 }
 
-// Listen for changes to localStorage to update settings in real-time
-window.addEventListener('storage', (event) => {
-    if (event.key === 'settings') {
-        console.log("Detected change in localStorage 'settings':", event.newValue);
-        settings = loadSettings();
-        // Reset the playedAlarm flag to allow the new alarm to play immediately
+window.addEventListener('storage', async (event) => {
+    if (event.key === 'settings' || event.key === null) {
+        settings = await loadSettings();
+        playedAzans = { Fajr: false, Dhuhr: false, Asr: false, Maghrib: false, Isha: false };
         playedAlarm = false;
-        console.log("Updated settings and reset playedAlarm flag:", settings);
+        playedReminders = {};
+        playedMakruhBuzzer = false;
+        lastHour = -1;
+        currentTimings = await fetchPrayerTimes();
+        if (currentTimings) updateTimeAndNextPrayer(currentTimings);
     }
 });
 
-// Initialize the app
 async function init() {
-    try {
-        // Load initial settings
-        settings = loadSettings();
+    settings = await loadSettings();
+    if (!settings) return;
 
-        // Fetch prayer times
-        const timings = await fetchPrayerTimes();
-        if (!timings) {
-            console.error("Failed to fetch prayer times. Cannot proceed.");
-            return;
-        }
-
-        // Update time and prayer info every second
-        updateTimeAndNextPrayer(timings);
-        setInterval(() => updateTimeAndNextPrayer(timings), 1000);
-
-        // Fetch new prayer times at midnight
-        setInterval(async () => {
-            const now = new Date();
-            if (now.getHours() === 0 && now.getMinutes() === 0 && now.getSeconds() === 0) {
-                console.log("Midnight: Fetching new prayer times.");
-                const newTimings = await fetchPrayerTimes();
-                if (newTimings) {
-                    updateTimeAndNextPrayer(newTimings);
-                }
-            }
-        }, 1000);
-    } catch (error) {
-        console.error("Error initializing app:", error);
+    // Apply theme from settings
+    document.body.classList.remove('theme-blue', 'theme-dark', 'theme-light');
+    if (settings.theme && settings.theme !== 'default') {
+        document.body.classList.add(`theme-${settings.theme}`);
     }
+
+    // Apply layout from settings
+    const prayerGrid = document.querySelector('.prayer-grid');
+    prayerGrid.classList.remove('layout-default', 'layout-compact', 'layout-modern');
+    if (settings.layout) {
+        prayerGrid.classList.add(`layout-${settings.layout}`);
+    }
+
+    currentTimings = await fetchPrayerTimes();
+    if (!currentTimings) return;
+
+    showInteractionPopup();
+    updateTimeAndNextPrayer(currentTimings);
+    fetchPrayerTimes30Days();
+
+    // Poll for settings changes every 5 seconds
+    setInterval(pollSettings, 5000);
+
+    // Update time every second
+    setInterval(() => {
+        if (currentTimings) updateTimeAndNextPrayer(currentTimings);
+    }, 1000);
 }
 
-// Start the app when the page loads
 window.onload = init;

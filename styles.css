@@ -1,15 +1,56 @@
+/* Theme Variables */
+:root {
+    /* Default Theme (Green) */
+    --theme-primary: #1B5E20;
+    --theme-secondary: rgba(0, 0, 0, 0.3);
+    --theme-text: #FFFFFF;
+    --theme-accent: #85c0a1;
+}
+
+/* Blue Theme */
+.theme-blue {
+    --theme-primary: #1a237e;
+    --theme-secondary: rgba(0, 0, 0, 0.4);
+    --theme-text: #FFFFFF;
+    --theme-accent: #64b5f6;
+}
+
+/* Dark Theme */
+.theme-dark {
+    --theme-primary: #121212;
+    --theme-secondary: rgba(255, 255, 255, 0.1);
+    --theme-text: #FFFFFF;
+    --theme-accent: #424242;
+}
+
+/* Light Theme */
+.theme-light {
+    --theme-primary: #f5f5f5;
+    --theme-secondary: rgba(0, 0, 0, 0.1);
+    --theme-text: #000000;
+    --theme-accent: #e0e0e0;
+}
+
+/* Apply Theme Variables */
 body {
     margin: 0;
     padding: 0;
     font-family: Arial, sans-serif;
-    background-color: #1B5E20; /* Consistent green background */
-    color: #FFFFFF;
+    background-color: var(--theme-primary);
+    color: var(--theme-text);
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100vh;
     width: 100vw;
     overflow: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.play-prompt {
+    cursor: pointer;
+    color: blue;
+    text-decoration: underline;
 }
 
 .clock-container {
@@ -27,13 +68,14 @@ body {
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    padding: 10px;
-    background-color: rgba(0, 0, 0, 0.3);
+    padding: 5px 10px;
+    background-color: var(--theme-secondary);
     box-sizing: border-box;
+    height: 60px;
 }
 
 .current-time {
-    font-size: 40px;
+    font-size: 45px;
     font-weight: bold;
 }
 
@@ -42,8 +84,8 @@ body {
 }
 
 .makruh-warning {
-    color: #FF0000; /* Red color for Makruh Waqt */
-    animation: blink 2s infinite; /* Blinking effect */
+    color: #FF0000;
+    animation: blink 2s infinite;
 }
 
 @keyframes blink {
@@ -54,6 +96,9 @@ body {
 
 .date-info {
     font-size: 30px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 /* Prayer Grid */
@@ -61,83 +106,214 @@ body {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     grid-template-rows: repeat(3, 1fr);
-    gap: 10px;
+    gap: 8px;
     width: 100%;
-    height: calc(100% - 60px); /* Adjust height to fit below top bar */
-    padding: 10px;
+    height: calc(100vh - 50px);
+    padding: 8px;
     box-sizing: border-box;
 }
 
+/* Prayer Box Styles */
 .prayer-box, .hadith-box {
-    background-color: rgba(0, 0, 0, 0.3);
-    padding: 15px;
+    background-color: var(--theme-secondary);
+    padding: 10px;
     border-radius: 5px;
-    text-align: center;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    align-items: center;
     overflow: hidden;
+    transition: background-color 0.3s ease;
+    position: relative;
 }
 
-.prayer-name {
-    font-size: 50px; /* Increased for larger cells */
+/* Layout Styles */
+/* Default Layout (unchanged) */
+.layout-default .prayer-box {
+    text-align: center;
+    align-items: center;
+    padding: 10px 8px;
+    min-height: 160px;
+}
+
+.layout-default .prayer-name {
+    font-size: 45px;
     font-weight: bold;
     text-transform: uppercase;
+    margin-bottom: 0;
+    text-align: center;
+    width: 100%;
+    word-wrap: break-word;
+    line-height: 1;
 }
 
-.prayer-time {
-    font-size: 40px; /* Increased for larger cells */
+.layout-default .prayer-time {
+    font-size: 55px;
+    font-weight: bold;
+    margin: 0;
+    text-align: center;
+    width: 100%;
+    line-height: 1;
+}
+
+.layout-default .prayer-details {
+    font-size: 22px;
+    text-align: center;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 3px;
+    line-height: 1.1;
+}
+
+.layout-default .prayer-details div {
+    margin: 0;
+    width: 100%;
+    text-align: center;
+}
+
+/* Compact Layout (unchanged) */
+.layout-compact .prayer-box {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 10px;
+    padding: 15px;
+    text-align: left;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.layout-compact .prayer-name {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 60px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    text-align: left;
+}
+
+.layout-compact .prayer-time {
+    grid-column: 1;
+    grid-row: 2;
+    font-size: 50px;
     font-weight: bold;
     margin: 5px 0;
+    text-align: left;
 }
 
-.prayer-details {
-    font-size: 30px; /* Increased for larger cells */
+.layout-compact .prayer-details {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    font-size: 30px;
+    position: static;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
 }
 
-.prayer-details div {
+.layout-compact .prayer-details div {
     margin: 2px 0;
+    text-align: right;
 }
 
-.prayer-details span {
+.layout-compact .prayer-details span {
     font-weight: bold;
 }
 
-/* Hadith Box */
+/* Modern Layout (updated to align prayer-name and prayer-time to left) */
+.layout-modern .prayer-box {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding: 15px;
+    background: linear-gradient(135deg, var(--theme-secondary), var(--theme-accent));
+    border-radius: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: left; /* Align all text to the left within the box */
+    align-items: flex-start; /* Align items to the start (left) */
+}
+
+.layout-modern .prayer-name {
+    font-size: 70px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    background: linear-gradient(45deg, var(--theme-text), var(--theme-accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-align: left; /* Explicitly align prayer name to the left */
+    width: 100%; /* Ensure it spans the full width */
+}
+
+.layout-modern .prayer-time {
+    font-size: 50px;
+    font-weight: bold;
+    margin: 5px 0;
+    text-align: left; /* Align prayer time to the left */
+    width: 100%; /* Ensure it spans the full width */
+}
+
+.layout-modern .prayer-details {
+    font-size: 30px;
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.layout-modern .prayer-details div {
+    margin: 2px 0;
+    text-align: right;
+}
+
+.layout-modern .prayer-details span {
+    font-weight: bold;
+}
+
+/* Hadith Box (unchanged) */
 .hadith-box {
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: var(--theme-secondary);
+    padding: 10px;
+    min-height: 160px;
 }
 
 .hadith-title {
-    font-size: 50px;
+    font-size: 35px;
     font-weight: bold;
     text-transform: uppercase;
+    margin-bottom: 5px;
 }
 
 .hadith-content {
-    font-size: 24px;
+    font-size: 20px;
     margin: 5px 0;
+    line-height: 1.2;
 }
 
 .hadith-source {
-    font-size: 20px;
+    font-size: 16px;
     font-style: italic;
 }
 
-/* Highlight Current Jamaat with Prayer-Specific Colors */
+/* Prayer Highlights (unchanged) */
 .fajr-highlight {
-    background-color: #85c0a1 !important; /* Fajr color */
-    color: #000000 !important;
+    background-color: var(--theme-accent) !important;
+    color: var(--theme-text) !important;
 }
 
 .fajr-highlight .prayer-name,
 .fajr-highlight .prayer-time,
 .fajr-highlight .prayer-details {
-    color: #000000 !important;
+    color: var(--theme-text) !important;
 }
 
 .dhuhr-highlight {
-    background-color: #ea5548 !important; /* Zohr color */
+    background-color: #ea5548 !important;
     color: #000000 !important;
 }
 
@@ -148,7 +324,7 @@ body {
 }
 
 .asr-highlight {
-    background-color: #fb913b !important; /* Asr color */
+    background-color: #fb913b !important;
     color: #000000 !important;
 }
 
@@ -159,7 +335,7 @@ body {
 }
 
 .maghrib-highlight {
-    background-color: #bf6c7f !important; /* Maghrib color */
+    background-color: #bf6c7f !important;
     color: #000000 !important;
 }
 
@@ -170,8 +346,8 @@ body {
 }
 
 .isha-highlight {
-    background-color: #434660 !important; /* Isha color */
-    color: #FFFFFF !important; /* White text for better contrast on dark background */
+    background-color: #434660 !important;
+    color: #FFFFFF !important;
 }
 
 .isha-highlight .prayer-name,
@@ -180,16 +356,14 @@ body {
     color: #FFFFFF !important;
 }
 
-/* Makruh Waqt Highlight for Prayer Box */
-
-
+/* Makruh Waqt Highlight */
 .makruh-highlight .prayer-name,
 .makruh-highlight .prayer-time,
 .makruh-highlight .prayer-details {
     color: #FFFFFF !important;
 }
 
-/* Responsive Adjustments */
+/* Responsive Adjustments (unchanged) */
 @media (max-width: 1024px) {
     .top-bar {
         padding: 5px;
@@ -207,16 +381,22 @@ body {
         font-size: 24px;
     }
 
-    .prayer-name, .hadith-title {
+    .layout-compact .prayer-name,
+    .layout-modern .prayer-name,
+    .hadith-title {
         font-size: 40px;
     }
 
-    .prayer-time {
+    .layout-compact .prayer-time,
+    .layout-modern .prayer-time {
         font-size: 32px;
     }
 
-    .prayer-details {
+    .layout-compact .prayer-details,
+    .layout-modern .prayer-details {
         font-size: 24px;
+        top: 10px;
+        right: 10px;
     }
 
     .hadith-content {
