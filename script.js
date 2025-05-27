@@ -24,24 +24,6 @@ const azaanFiles = {
     Silent: 'azan/silent.mp3'
 };
 
-function getDateRange() {
-    const today = new Date();
-    const endDate = new Date(today);
-    endDate.setDate(today.getDate() + 29); // 30 days total, including today
-
-    const formatDate = (date) => {
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-based
-        const year = date.getFullYear();
-        return `${day}-${month}-${year}`;
-    };
-
-    return {
-        from: formatDate(today),
-        to: formatDate(endDate)
-    };
-}
-
 // Show interaction popup if no interaction
 function showInteractionPopup() {
     if (!userInteracted) {
@@ -99,7 +81,7 @@ async function loadSettings() {
         layout: 'default'
     };
     try {
-        const response = await fetch(`${BASE_URL}/prayer3/save_settings.php`);
+        const response = await fetch(`${BASE_URL}/save_settings.php`);
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const loadedSettings = await response.json();
         const settings = {
@@ -128,7 +110,7 @@ async function loadSettings() {
 
 async function pollSettings() {
     try {
-        const response = await fetch(`${BASE_URL}/prayer3/save_settings.php`);
+        const response = await fetch(`${BASE_URL}/save_settings.php`);
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const newSettings = await response.json();
         if (JSON.stringify(newSettings) !== JSON.stringify(settings)) {
@@ -235,41 +217,58 @@ async function fetchPrayerTimes30Days() {
     const shafaq = 'general';
     const tune = '5,3,5,7,9,-1,0,8,-6';
     const timezonestring = 'Asia/Kolkata';
-    const { from, to } = getDateRange();
 
-    try {
-        const url = `https://api.aladhan.com/v1/calendarByCity/from/${from}/to/${to}?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&state=${encodeURIComponent(state || '')}&method=${calcMethod}&school=${asrMethod === 'hanafi' ? 1 : 0}&adjustment=${adjustment}&shafaq=${shafaq}&tune=${tune}&timezonestring=${timezonestring}&calendarMethod=MATHEMATICAL`;
-        console.log("Fetching 30-day prayer times from:", url);
+    const fetchPromises = [];
+    let requestCount = 0;
+    const maxRequestsPerBatch = 10;
 
-        const response = await fetch(url, { mode: 'cors', headers: { 'Accept': 'application/json' } });
-        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-        const data = await response.json();
-
-        prayerTimes30Days = {};
-        data.data.forEach(day => {
-            const date = day.date.gregorian.date.split('-').reverse().join('-'); // Convert DD-MM-YYYY to YYYY-MM-DD for internal consistency
-            prayerTimes30Days[date] = {
-                timings: day.timings,
-                readableDate: day.date.readable,
-                hijriDate: `${day.date.hijri.day} ${day.date.hijri.month.en} ${day.date.hijri.year}`,
-                holidays: day.date.hijri.holidays || []
-            };
-        });
-
-        localStorage.setItem('prayerTimes30Days', JSON.stringify(prayerTimes30Days));
-        toggleOfflineIndicator(false);
-        console.log("30-day prayer times fetched:", prayerTimes30Days);
-
-        const todayDate = getTodayDate();
-        if (prayerTimes30Days[todayDate]) {
-            currentTimings = prayerTimes30Days[todayDate].timings;
-            updatePrayerUI(currentTimings, prayerTimes30Days[todayDate].readableDate, prayerTimes30Days[todayDate].hijriDate);
-            updateTimeAndNextPrayer(currentTimings);
+    for (let i = 0; i < 30; i++) {
+        const date = getTodayDate(i);
+        const cachedPrayerTimes = JSON.parse(localStorage.getItem('prayerTimes30Days')) || {};
+        if (cachedPrayerTimes[date]) {
+            prayerTimes30Days[date] = cachedPrayerTimes[date];
+            continue;
         }
-    } catch (error) {
-        console.error("Error fetching 30-day prayer times:", error);
-        toggleOfflineIndicator(true);
+
+        if (!isOnline()) {
+            console.warn("Offline: Using cached 30-day prayer times.");
+            toggleOfflineIndicator(true);
+            break;
+        }
+
+        const url = `http://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&state=${encodeURIComponent(state || '')}&method=${calcMethod}&school=${asrMethod === 'hanafi' ? 1 : 0}&shafaq=${shafaq}&tune=${tune}&timezonestring=${timezonestring}&date=${date}&calendarMethod=MATHEMATICAL&adjustment=${adjustment}`;
+        fetchPromises.push(
+            fetch(url, { mode: 'cors' })
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    prayerTimes30Days[date] = {
+                        timings: data.data.timings,
+                        readableDate: data.data.date.readable,
+                        hijriDate: `${data.data.date.hijri.day} ${data.data.date.hijri.month.en} ${data.data.date.hijri.year}`,
+                        holidays: data.data.date.hijri.holidays || []
+                    };
+                })
+                .catch(error => {
+                    console.error(`Error fetching prayer times for ${date}:`, error);
+                    toggleOfflineIndicator(true);
+                })
+        );
+
+        requestCount++;
+        if (requestCount >= maxRequestsPerBatch) {
+            await Promise.all(fetchPromises);
+            fetchPromises.length = 0;
+            requestCount = 0;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
     }
+
+    if (fetchPromises.length > 0) await Promise.all(fetchPromises);
+    localStorage.setItem('prayerTimes30Days', JSON.stringify(prayerTimes30Days));
+    toggleOfflineIndicator(false);
 }
 
 async function fetchPrayerTimes() {
@@ -325,9 +324,23 @@ async function fetchDayPrayerTimes(date) {
 function updatePrayerUI(timings, readableDate, hijriDate) {
     const fields = [
         { id: 'fajr-begins', value: timings?.Fajr },
-        // [Other fields...]
+        { id: 'fajr-jamaat', value: timings?.Fajr },
+        { id: 'fajr-additional', value: timings?.Imsak },
+        { id: 'dhuhr-begins', value: timings?.Dhuhr },
+        { id: 'dhuhr-jamaat', value: timings?.Dhuhr },
+        { id: 'dhuhr-additional', value: timings?.Sunrise },
+        { id: 'asr-begins', value: timings?.Asr },
+        { id: 'asr-jamaat', value: timings?.Asr },
+        { id: 'asr-additional', value: timings?.Sunset },
+        { id: 'maghrib-begins', value: timings?.Maghrib },
+        { id: 'maghrib-jamaat', value: timings?.Maghrib },
+        { id: 'maghrib-additional', value: timings?.Sunset },
+        { id: 'isha-begins', value: timings?.Isha },
+        { id: 'isha-jamaat', value: timings?.Isha },
+        { id: 'isha-qaza', value: timings?.Isha ? calculateQazaTime(timings.Isha) : 'N/A' },
         { id: 'gregorian-date', value: readableDate || 'Loading...' },
-        { id: 'islamic-date', value: hijriDate || 'Loading...' }
+        { id: 'islamic-date', value: hijriDate || 'Loading...' },
+        { id: 'current-city', value: settings.city },
     ];
     fields.forEach(field => {
         const element = document.getElementById(field.id);
@@ -355,7 +368,7 @@ async function fetchHadith(day, prayer) {
     }
 
     try {
-        const response = await fetch(`${BASE_URL}/prayer3/load_hadiths.php?prayer=${prayer}&day=${day}`);
+        const response = await fetch(`${BASE_URL}/load_hadiths.php?prayer=${prayer}&day=${day}`);
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const hadith = await response.json();
         cachedHadiths[hadithCacheKey] = hadith;

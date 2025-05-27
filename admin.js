@@ -105,7 +105,7 @@ function setupEventListeners() {
 
 async function loadSettings() {
     try {
-        const response = await fetch(`${BASE_URL}/prayer3/save_settings.php`);
+        const response = await fetch(`${BASE_URL}/save_settings.php`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const loadedSettings = await response.json();
         // Map loaded settings to current structure
@@ -148,7 +148,7 @@ async function loadSettings() {
 async function saveSettings() {
     localStorage.setItem('prayerSettings', JSON.stringify(settings));
     try {
-        const response = await fetch(`${BASE_URL}/prayer3/save_settings.php`, {
+        const response = await fetch(`${BASE_URL}/save_settings.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settings)
@@ -327,7 +327,7 @@ async function fetchAzanFiles() {
 
 async function pollSettings() {
     try {
-        const response = await fetch(`${BASE_URL}/prayer3/save_settings.php`);
+        const response = await fetch(`${BASE_URL}/save_settings.php`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const newSettings = await response.json();
         if (JSON.stringify(newSettings) !== JSON.stringify(settings)) {
