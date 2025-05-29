@@ -168,8 +168,8 @@ The Prayer Time App is ideal for running on a Raspberry Pi, especially for home 
 2. Use the admin panel (`admin.html`) to:
    - Set your city and country.
    - Choose a calculation method (e.g., Muslim World League).
-   - Customize audio notifications and background themes.
-3. For mosque displays, run in kiosk mode for a full-screen, distraction-free experience.
+   - Customize Alarm notifications and background themes.
+3. Run in kiosk mode for a full-screen, distraction-free experience.
 
 ## Contributing
 
