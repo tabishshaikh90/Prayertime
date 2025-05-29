@@ -10,7 +10,7 @@ Try it live at [prayer.tabish.in](https://prayer.tabish.in) and customize it via
 - **Real-Time Display**: Shows current English and Islamic (Hijri) dates, with a countdown timer to the next prayer.
 - **Dynamic Prayer Highlighting**: Highlights the current prayer and displays a red blinking bar during Makruh Waqt, with an optional buzzer sound (`azan/buzzer.mp3`).
 - **Customizable Audio Notifications**: Plays Azan audio (e.g., `azan/fajr.mp3`) at prayer times and supports hourly reminders with custom MP3 playback.
-- **Responsive UI/UX**: Offers grid, list, or circular layouts, light/dark themes, and compatibility with devices like the ELECROW ESP32 7.0 Inch HMI.
+- **Responsive UI/UX**: Offers grid or list layouts, light/dark themes.
 - **Dynamic Backgrounds**: Customize backgrounds via the admin panel.
 - **Offline Support**: Caches prayer data in `localStorage` for offline access, with real-time updates via `postMessage`.
 - **Admin Panel**: Configure location, calculation method, audio, and display settings.
@@ -70,12 +70,12 @@ To host the Prayer Time App, ensure you have:
 
 ## Hosting on Raspberry Pi
 
-The Prayer Time App is ideal for running on a Raspberry Pi, especially for mosque displays using kiosk mode on devices like the ELECROW ESP32 7.0 Inch HMI. Follow these steps to host the app on a Raspberry Pi:
+The Prayer Time App is ideal for running on a Raspberry Pi, especially for home displays using kiosk mode on raspberry pi devices. Follow these steps to host the app on a Raspberry Pi:
 
 ### Requirements
 - Raspberry Pi (Pi 3 or 4 recommended) with Raspberry Pi OS (latest version).
 - Internet connection for initial setup and API calls.
-- Monitor or touchscreen display (e.g., ELECROW ESP32 HMI or standard HDMI monitor).
+- Monitor or touchscreen display.
 - Optional: Speaker for Azan and buzzer audio.
 
 ### Step-by-Step Instructions
@@ -154,21 +154,13 @@ The Prayer Time App is ideal for running on a Raspberry Pi, especially for mosqu
 
 7. **Test the App**:
    - After reboot, the Raspberry Pi should automatically launch Chromium in kiosk mode, displaying the app at `http://localhost/prayertime`.
-   - Access the admin panel at `http://localhost/prayertime/admin.html` from another device on the same network to configure location, calculation method, and audio settings.
+   - Access the admin panel at `http://localhost/prayertime/admin.html` from another device on the same network to configure location, calculation method, and alarm settings.
 
-8. **Optional: Connect to a Display**:
-   - For devices like the ELECROW ESP32 7.0 Inch HMI, ensure the Raspberry Pi is connected via HDMI or compatible interface.
-   - Adjust display settings in the admin panel for optimal resolution and layout.
 
-9. **Audio Setup**:
+8. **Audio Setup**:
    - Connect a speaker to the Raspberry Pi’s audio jack or USB sound card.
    - Test Azan audio (`azan/fajr.mp3`) and buzzer (`azan/buzzer.mp3`) via the admin panel.
 
-### Troubleshooting
-- **No Display**: Ensure the Pi is connected to a monitor and Chromium is set to kiosk mode.
-- **API Errors**: Verify internet connectivity and check the Aladhan API URL in the app’s configuration.
-- **Audio Issues**: Confirm the speaker is connected and test audio files in the admin panel.
-- **Browser Console**: Open Chromium’s developer tools (Ctrl+Shift+I) to debug JavaScript or API issues.
 
 ## Usage
 
